@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Frontend
+node_modules/
+frontend/dist/
+
+# Local databases / dumps (your data never goes to git)
+*.db
+*.sqlite
+backups/
+*.tsbuildinfo

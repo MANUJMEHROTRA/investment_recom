@@ -1,0 +1,84 @@
+# Everything runs on your machine. Nothing here is exposed beyond localhost.
+name: stock-compass
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-invest}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-invest}
+      POSTGRES_DB: ${POSTGRES_DB:-invest}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"   # handy for psql / DBeaver; bound to localhost only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-invest} -d ${POSTGRES_DB:-invest}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  analytics:
+    build: ./services/analytics
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  agent:
+    build: ./services/agent
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # Ollama runs natively on the Mac (Metal GPU); containers reach it through this hostname.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8002:8002"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./services/backend
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-invest}:${POSTGRES_PASSWORD:-invest}@db:5432/${POSTGRES_DB:-invest}
+      ANALYTICS_URL: http://analytics:8001
+      AGENT_URL: http://agent:8002
+    depends_on:
+      agent:
+        condition: service_started
+      db:
+        condition: service_healthy
+      analytics:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_BASE: http://localhost:8000
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:3000:80"
+
+volumes:
+  pgdata:
