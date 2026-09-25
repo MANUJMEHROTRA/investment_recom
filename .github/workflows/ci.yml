@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [analytics, backend, agent]
+        service: [analytics, backend, agent, clustering]
     defaults:
       run:
         working-directory: services/${{ matrix.service }}

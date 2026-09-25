@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { api, type HorizonStats } from "../api";
 import { GroupReturns } from "../components/charts";
 import { ErrorBox, Loading, RatingChip, StatTile } from "../components/ui";
 import { pct, shortDate, usd } from "../format";
 import { useAsync } from "../hooks";
+import { StockName } from "../names";
+import { Formula, HowCalculated } from "../components/how";
 
 const HORIZON_LABEL: Record<string, string> = { "5d": "1 week", "21d": "1 month", "63d": "3 months", to_date: "Held to today" };
 const WINDOWS = [30, 90, 180, 365];
@@ -49,6 +50,20 @@ export function PerformancePage() {
           Every Buy / Strong Buy made in the last {days} days, bought at that day's close and held for <strong>{HORIZON_LABEL[horizon]}</strong>,
           compared with buying the S&P 500 (SPY) on the same day. Picks too recent to have completed the holding period are excluded.
         </p>
+        <HowCalculated>
+          <ul className="small how-list">
+            <li>
+              Entry = the pick's closing price on its recommendation day. <Formula>forward return = close N sessions later ÷ entry − 1</Formula> (N = 5, 21, 63),
+              or to the latest close for "held to today".
+            </li>
+            <li>
+              <Formula>excess = forward return − SPY's return over the same sessions</Formula>. Win rate = share of picks with return &gt; 0; beat S&P = share with
+              excess &gt; 0.
+            </li>
+            <li>Averages are simple means across picks (each pick counts once per recommendation day). Returns are in USD, before FX and tax.</li>
+            <li>For the rupee view and top-N portfolios bought at the next open, see the Backtest page.</li>
+          </ul>
+        </HowCalculated>
         <div className="tiles">
           <StatTile label="Picks measured" value={all?.n ?? 0} />
           <StatTile label="Average return" value={pct(all?.avg_return, 2, true)} />
@@ -89,9 +104,7 @@ export function PerformancePage() {
                 <tr key={`${r.run_date}-${r.symbol}`} className="row">
                   <td className="muted">{shortDate(r.run_date)}</td>
                   <td>
-                    <Link to={`/stock/${r.symbol}`}>
-                      <strong>{r.symbol}</strong>
-                    </Link>
+                    <StockName symbol={r.symbol} name={r.name} />
                   </td>
                   <td>
                     <RatingChip rating={r.rating} />

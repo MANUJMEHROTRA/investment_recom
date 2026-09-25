@@ -6,6 +6,8 @@ import { SectorStrength } from "../components/charts";
 import { ErrorBox, Loading } from "../components/ui";
 import { longDate, pct } from "../format";
 import { useAsync } from "../hooks";
+import { useNames } from "../names";
+import { Formula, HowCalculated } from "../components/how";
 
 const QUADRANT_NOTE: Record<SectorRow["quadrant"], string> = {
   Leading: "beating the S&P 500 and still accelerating",
@@ -21,6 +23,7 @@ function Signed({ v }: { v: number | null }) {
 
 export function Sectors() {
   const b = useAsync(api.latestBrief, []);
+  const names = useNames();
   const [open, setOpen] = useState<string | null>(null);
 
   if (b.loading && !b.data) return <Loading />;
@@ -65,7 +68,10 @@ export function Sectors() {
                       {s.top_symbols.map((t, i) => (
                         <Fragment key={t}>
                           {i > 0 && ", "}
-                          <Link to={`/stock/${t}`}>{t}</Link>
+                          <Link to={`/stock/${t}`} title={names[t]}>
+                            {t}
+                          </Link>
+                          {names[t] && <span className="muted"> ({names[t]})</span>}
                         </Fragment>
                       ))}
                     </div>
@@ -84,6 +90,18 @@ export function Sectors() {
           <h3>Relative strength vs the S&P 500, last 3 months</h3>
         </div>
         <p className="muted small">Positive = the sector ETF beat SPY. This is the main evidence behind each stance.</p>
+        <HowCalculated>
+          <ul className="small how-list">
+            <li>
+              <Formula>RS = sector ETF return − SPY return</Formula> over 1 month (21 sessions) and 3 months (63).
+            </li>
+            <li>Rotation: Leading = RS3m ≥ 0 and RS1m ≥ 0 · Weakening = RS3m ≥ 0, RS1m &lt; 0 · Improving = RS3m &lt; 0, RS1m ≥ 0 · Lagging = both &lt; 0.</li>
+            <li>
+              Rank: <Formula>100 × (0.35·pct(RS3m) + 0.25·pct(RS1m) + 0.2·avg model score/100 + 0.2·share above 50-day)</Formula>.
+            </li>
+            <li>Stance comes from the AI reading the table and news, but a stance that contradicts the rotation (e.g. Underweight a Leading sector) is replaced by the data-driven one.</li>
+          </ul>
+        </HowCalculated>
         <SectorStrength rows={sectors} />
       </section>
 
@@ -159,7 +177,10 @@ export function Sectors() {
                             {s.top_symbols.map((t, i) => (
                               <Fragment key={t}>
                                 {i > 0 && ", "}
-                                <Link to={`/stock/${t}`}>{t}</Link>
+                                <Link to={`/stock/${t}`} title={names[t]}>
+                            {t}
+                          </Link>
+                          {names[t] && <span className="muted"> ({names[t]})</span>}
                               </Fragment>
                             ))}
                           </p>

@@ -56,3 +56,7 @@ def exits(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 def fx(series: dict[str, Any]) -> dict[str, Any]:
     return _post("/fx", {"series": series})
+
+
+def strategy(payload: dict[str, Any]) -> dict[str, Any]:
+    return _post("/strategy", payload)

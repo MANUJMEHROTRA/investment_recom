@@ -6,6 +6,7 @@ import { ActionChip, ArticleList, CitedText, EvidenceList, SentimentBadge } from
 import { ErrorBox, Loading, StatTile } from "../components/ui";
 import { longDate, pct } from "../format";
 import { useAsync } from "../hooks";
+import { Formula, HowCalculated } from "../components/how";
 
 const EMPTY = { symbol: "", quantity: "", avg_cost: "", buy_date: "", buy_fx_rate: "", notes: "" };
 
@@ -161,6 +162,22 @@ export function Portfolio() {
           </div>
         )}
         <AddHolding onAdded={data.reload} />
+        <HowCalculated>
+          <ul className="small how-list">
+            <li>
+              <Formula>P/L $ = shares × (price − avg cost)</Formula>; <Formula>P/L ₹ = shares × price × USD/INR today − shares × avg cost × USD/INR when bought</Formula>{" "}
+              (your entered rate, or the historical rate on the buy date).
+            </li>
+            <li>
+              <Formula>FX effect = shares × avg cost × (USD/INR today − USD/INR at purchase)</Formula> — the rupee gain from the currency alone.
+            </li>
+            <li>
+              Advice: exit points (trailing stop <Formula>highest close since buy − 3×ATR</Formula> hit +3, confirmed downtrend +3, rated Avoid +2, below 50-day +1,
+              down &gt;15% +1, bearish MACD +1) vs hold points (uptrend +2, rated Buy +2, beating S&P +1, near 52-week high +1). ≥4 exit points → Exit; ≥2 or big
+              overbought gain → Trim. The AI then reads recent news and may adjust, and both views are shown.
+            </li>
+          </ul>
+        </HowCalculated>
       </section>
 
       {d.holdings.length === 0 ? (

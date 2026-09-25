@@ -21,7 +21,7 @@ or Claude) then writes a **morning brief** covering:
 
 ---
 
-## Architecture — 4 services + database
+## Architecture — 5 services + 2 databases
 
 ```
             ┌──────────────────────────┐
@@ -45,6 +45,7 @@ or Claude) then writes a **morning brief** covering:
 | **Frontend** | [frontend/](frontend/) | Dashboard: today's picks, live quotes, per-stock charts, history, track record, methodology |
 | **Backend** | [services/backend/](services/backend/) | Owns the database, downloads prices and fundamentals, runs the daily job and serves `/api/*` |
 | **Analytics** | [services/analytics/](services/analytics/) | Pure maths: takes price data, returns scores, reasons, the market regime, sector rotation, exit signals, USD/INR stats and performance |
+| **Clustering** | [services/clustering/](services/clustering/) | Social listening. Keeps its **own Postgres + pgvector** (`newsdb`). Ingests only new articles, saves each embedding once, clusters with UMAP + HDBSCAN, and has an LLM write a headline for new or changed clusters |
 | **Agent** | [services/agent/](services/agent/) | LangGraph workflow: gathers news, filters it for trust and relevance, scores sentiment and has the LLM write cited reasoning |
 
 ### The morning-brief agent (LangGraph)
@@ -96,6 +97,35 @@ plan ─► gather_news  ×N in parallel (each candidate, holding, sector ETF, m
 
 ---
 
+### Social listening (clustering service)
+
+```
+backend news feed ──(cursor: only new rows)──► ingest ──► embed new articles only ──► pgvector (saved)
+                                                         nomic-embed-text on the Mac GPU
+window of last 14 days ──► UMAP 5-d ──► HDBSCAN ──► merge clusters with centroid cos ≥ 0.92 ──► UMAP 2-d map
+changed clusters only ──► LLM headline + summary (cached by member hash) ──► Social page
+```
+
+* **Density-based clustering.** HDBSCAN (the DBSCAN family) finds stories without being told how many exist. Articles that match no story stay unclustered.
+* **One story, one cluster.** Near-duplicate clusters are merged.
+* **Stable ids.** A cluster keeps its id across runs when at least 30% of its articles overlap with a previous cluster.
+* **Incremental.** A re-run with no new articles takes seconds: nothing is re-embedded or re-summarized.
+* **GPU.** Docker on macOS can't reach the Apple GPU, so embeddings run through the native Ollama (Metal). To run on PyTorch **MPS** instead, set `CLUSTERING_URL=http://host.docker.internal:8003` in `.env`, run `docker compose up -d backend`, then `make social-native`.
+* **Platform.** `platform` is stored for every item, so Twitter/X or LinkedIn connectors can be added later alongside News.
+
+### Backtest (top 5 / 10 / 20 / 30)
+
+Replays every stored recommendation day:
+1. Buy the top N at the **next session's open**, with equal weights.
+2. Rebalance daily, weekly or monthly.
+3. Compare against SPY on the same dates.
+
+For an Indian investor, `INR return = (1 + USD return) × (1 + USD/INR change) × (1 − FX markup)² − 1`, using a 1% markup each way by default. The currency move is either the actual USD/INR history or an assumed yearly rate. Every period and holding is shown, so the result can be audited.
+
+### Transparency
+
+The **Glossary** page defines every term and formula the dashboard uses (momentum, P/E, RSI, ATR, the INR maths, UMAP/HDBSCAN and so on). Every computed section also has a "How this is calculated" panel.
+
 ## Choosing the LLM
 
 | `LLM_PROVIDER` in `.env` | Cost | Notes |
@@ -129,6 +159,8 @@ If your laptop was asleep, the job catches up when Docker starts again.
 |---|---|
 | `make run` | Analyse now (for example during market hours) |
 | `make brief` | Run the news agent and write today's morning brief now |
+| `make sweep` | Collect news for every tracked stock, then re-cluster |
+| `make cluster` | Re-run social-listening clustering (new articles only) |
 | `make backfill DAYS=250` | Replay the model over more history |
 | `make backup` | Save a `pg_dump` to `backups/` (git-ignored) |
 | `make psql` | Open a SQL shell |

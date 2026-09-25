@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://invest:invest@localhost:5432/invest"
     analytics_url: str = "http://localhost:8001"
     agent_url: str = "http://localhost:8002"
+    clustering_url: str = "http://localhost:8003"
+    news_sweep: bool = True  # after the brief, collect news for every tracked stock
 
     universe: str = ""
     benchmark: str = "SPY"

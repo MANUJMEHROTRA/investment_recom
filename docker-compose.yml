@@ -19,6 +19,43 @@ services:
       timeout: 3s
       retries: 20
 
+  # Separate database for social listening: articles, saved embeddings (pgvector), cluster runs.
+  newsdb:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: social
+      POSTGRES_PASSWORD: social
+      POSTGRES_DB: social
+    volumes:
+      - newsdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U social -d social"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  clustering:
+    build: ./services/clustering
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      SOCIAL_DATABASE_URL: postgresql+psycopg://social:social@newsdb:5432/social
+      BACKEND_URL: http://backend:8000
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      EMBED_BACKEND: ollama  # the native `make social-native` mode uses PyTorch MPS instead
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      newsdb:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8003:8003"
+
   analytics:
     build: ./services/analytics
     restart: unless-stopped
@@ -59,6 +96,7 @@ services:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-invest}:${POSTGRES_PASSWORD:-invest}@db:5432/${POSTGRES_DB:-invest}
       ANALYTICS_URL: http://analytics:8001
       AGENT_URL: http://agent:8002
+      CLUSTERING_URL: ${CLUSTERING_URL:-http://clustering:8003}
     depends_on:
       agent:
         condition: service_started
@@ -82,3 +120,4 @@ services:
 
 volumes:
   pgdata:
+  newsdata:

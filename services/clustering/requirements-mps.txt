@@ -1,0 +1,4 @@
+# Optional: run natively on Apple Silicon with PyTorch MPS embeddings
+-r requirements.txt
+torch>=2.4
+sentence-transformers>=3.0

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
 
-from . import context, performance, scoring
+from . import context, performance, scoring, strategy
 from .indicators import macd, rsi, sma
 from .schemas import AnalyzeRequest, AnalyzeResponse, IndicatorRequest, PerformanceRequest
 
@@ -58,6 +58,11 @@ def exits(req: context.ExitRequest) -> list[dict]:
 @app.post("/fx")
 def fx(req: context.FxRequest) -> dict:
     return context.fx_stats(req)
+
+
+@app.post("/strategy")
+def strategy_sim(req: strategy.StrategyRequest) -> dict:
+    return strategy.simulate(req)
 
 
 @app.get("/methodology")

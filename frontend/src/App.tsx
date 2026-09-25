@@ -3,7 +3,11 @@ import { NavLink, Route, Routes } from "react-router-dom";
 import { api, getApiBase, setApiBase } from "./api";
 import { CurrencyProvider, CurrencyToggle } from "./currency";
 import { useAsync } from "./hooks";
+import { NamesProvider } from "./names";
+import { Backtest } from "./pages/Backtest";
 import { BriefPage } from "./pages/Brief";
+import { Glossary } from "./pages/Glossary";
+import { Social } from "./pages/Social";
 import { Portfolio } from "./pages/Portfolio";
 import { Sectors } from "./pages/Sectors";
 import { Dashboard } from "./pages/Dashboard";
@@ -58,7 +62,9 @@ function Connection() {
 export default function App() {
   return (
     <CurrencyProvider>
-      <Shell />
+      <NamesProvider>
+        <Shell />
+      </NamesProvider>
     </CurrencyProvider>
   );
 }
@@ -80,10 +86,13 @@ function Shell() {
           </NavLink>
           <NavLink to="/picks">Picks</NavLink>
           <NavLink to="/sectors">Sectors</NavLink>
+          <NavLink to="/social">Social</NavLink>
           <NavLink to="/portfolio">Portfolio</NavLink>
-          <NavLink to="/history">History</NavLink>
+          <NavLink to="/backtest">Backtest</NavLink>
           <NavLink to="/performance">Track record</NavLink>
+          <NavLink to="/history">History</NavLink>
           <NavLink to="/method">Method</NavLink>
+          <NavLink to="/glossary">Glossary</NavLink>
         </nav>
         <div className="topbar-right">
           <CurrencyToggle />
@@ -96,6 +105,9 @@ function Shell() {
           <Route path="/picks" element={<Dashboard />} />
           <Route path="/sectors" element={<Sectors />} />
           <Route path="/portfolio" element={<Portfolio />} />
+          <Route path="/social" element={<Social />} />
+          <Route path="/backtest" element={<Backtest />} />
+          <Route path="/glossary" element={<Glossary />} />
           <Route path="/history" element={<History />} />
           <Route path="/history/:date" element={<HistoryDay />} />
           <Route path="/stock/:symbol" element={<Stock />} />

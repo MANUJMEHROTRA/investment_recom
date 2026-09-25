@@ -6,6 +6,8 @@ import { ArticleList, CitedText, EvidenceList, SentimentBadge, VerdictChip } fro
 import { Loading, RatingChip, RegimeBadge, StatTile } from "../components/ui";
 import { longDate, pct } from "../format";
 import { useAsync } from "../hooks";
+import { StockName } from "../names";
+import { Formula, HowCalculated } from "../components/how";
 
 function RunBriefButton({ label = "Run the brief now" }: { label?: string }) {
   const [msg, setMsg] = useState<string | null>(null);
@@ -112,7 +114,7 @@ function InvestPlanner({ picks, fx }: { picks: BriefPick[]; fx: Fx }) {
             {plan.rows.map((r) => (
               <tr key={r.p.symbol}>
                 <td>
-                  <strong>{r.p.symbol}</strong> <span className="muted small">{r.p.verdict === "Strong pick" ? "★" : ""}</span>
+                  <StockName symbol={r.p.symbol} name={r.p.name} />
                 </td>
                 <td className="num">{pct(r.w, 1)}</td>
                 <td className="num">{inr(r.inrAmt)}</td>
@@ -266,6 +268,23 @@ export function BriefView({ brief }: { brief: Brief }) {
       </section>
 
       {fx && <FxPanel fx={fx} note={m.inr_investor_note} evidence={m.evidence} />}
+
+      <HowCalculated title="How verdicts are decided">
+        <ul className="small how-list">
+          <li>
+            Start from the quantitative model: <Formula>score = 0.25·trend + 0.25·momentum + 0.15·relative strength + 0.10·timing + 0.15·risk + 0.10·fundamentals</Formula>
+          </li>
+          <li>
+            News: each article's sentiment (AI, or VADER lexicon) is weighted by <Formula>trust × relevance × e^(−age/3 days)</Formula>. Adjusted score ={" "}
+            <Formula>score + 8 × news sentiment</Formula>.
+          </li>
+          <li>
+            <strong>Wait — news risk</strong>: buy-rated but news ≤ −0.3 or the AI says Avoid · <strong>Strong pick</strong>: Strong Buy, news ≥ −0.1, AI
+            conviction High/Medium · <strong>Pick</strong>: other buy-rated · <strong>Watch</strong>: not buy-rated.
+          </li>
+          <li>Rupee planner: weights are the model's inverse-volatility weights; amount in $ = ₹ ÷ (USD/INR × (1 + markup)).</li>
+        </ul>
+      </HowCalculated>
 
       {groups.map(([verdict, ps]) => (
         <section key={verdict} className="group">

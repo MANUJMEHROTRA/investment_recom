@@ -44,6 +44,7 @@ export interface Run {
 
 export interface RunSummary extends Omit<Run, "recommendations"> {
   top_picks: string[];
+  top_pick_names: Record<string, string>;
   buy_count: number;
 }
 
@@ -104,7 +105,7 @@ export interface HorizonStats {
 export interface Performance {
   horizons: string[];
   summary: ({ group: string; count: number } & Record<string, HorizonStats | string | number>)[];
-  rows: ({ run_date: string; symbol: string; rating: Rating; score: number; entry_price: number } & Record<string, number | string | null>)[];
+  rows: ({ run_date: string; symbol: string; name: string | null; rating: Rating; score: number; entry_price: number } & Record<string, number | string | null>)[];
 }
 
 export interface Methodology {
@@ -285,6 +286,129 @@ export interface HoldingInput {
   notes: string | null;
 }
 
+export interface SocialPoint {
+  id: string;
+  label: number;
+  x: number;
+  y: number;
+  probability: number;
+  title: string;
+  summary: string;
+  url: string;
+  publisher: string;
+  source_api: string;
+  platform: string;
+  kind: string;
+  published_at: string;
+  sentiment: number | null;
+  sentiment_method: string | null;
+  tickers: string[];
+  ticker_names: Record<string, string>;
+  sectors: string[];
+}
+
+export interface SocialCluster {
+  label: number;
+  stable_id: string;
+  size: number;
+  headline: string;
+  summary: string;
+  summary_method: "llm" | "keywords";
+  keywords: string[];
+  sentiment: number | null;
+  tickers: Record<string, number>;
+  ticker_names: Record<string, string>;
+  sectors: Record<string, number>;
+  sources: Record<string, number>;
+  platforms: Record<string, number>;
+  cx: number;
+  cy: number;
+  first_published: string;
+  last_published: string;
+  top_article_ids: string[];
+}
+
+export interface SocialRun {
+  id: number;
+  created_at: string;
+  embed_model: string;
+  params: Record<string, string | number>;
+  n_articles: number;
+  n_clusters: number;
+  n_noise: number;
+  new_embeddings: number;
+  new_summaries: number;
+  seconds: number;
+}
+
+export interface SocialMap {
+  run: SocialRun | null;
+  clusters: SocialCluster[];
+  points: SocialPoint[];
+}
+
+export interface SocialStatus {
+  job: { running: boolean; stage: string; error: string | null; last_finished: string | null };
+  embedder: { model: string; device: string };
+  counts: { articles: number; embeddings: number; runs: number; cached_summaries: number };
+  last_run: SocialRun | null;
+  platforms: string[];
+}
+
+export interface StrategyPeriod {
+  entry: string;
+  exit: string;
+  rec_date: string;
+  source: string;
+  holdings: string[];
+  return: number;
+  benchmark_return: number;
+  turnover: number;
+  positions: { symbol: string; entry: number; exit: number; return: number }[];
+}
+
+export interface StrategyResult {
+  size: number;
+  periods: number;
+  start: string;
+  end: string;
+  days: number;
+  usd: { total: number; annualised: number | null; max_drawdown: number };
+  benchmark_usd: { total: number; annualised: number | null; max_drawdown: number };
+  inr: { total: number; annualised: number | null };
+  benchmark_inr: { total: number; annualised: number | null };
+  excess_usd: number;
+  win_rate: number;
+  beat_benchmark_rate: number;
+  avg_period_return: number;
+  trades: number;
+  fx_move: number;
+  fx_cost: number;
+  backfilled_periods: number;
+  curve: { date: string; strategy: number; benchmark: number; strategy_inr: number; benchmark_inr: number }[];
+  period_log: StrategyPeriod[];
+}
+
+export interface StrategyResponse {
+  assumptions: Record<string, string | number | null>;
+  results: StrategyResult[];
+  names: Record<string, string | null>;
+  recommendation_days: number;
+  backfilled_days: number;
+  note?: string;
+}
+
+export interface StrategyParams {
+  sizes: string;
+  rebalance_every: number;
+  selection: "ranked" | "buyable";
+  fx_markup_pct: number;
+  trade_cost_pct: number;
+  fx_mode: "actual" | "assumed";
+  assumed_fx_annual_pct: number;
+  days: number;
+}
+
 const STORAGE_KEY = "apiBase";
 const DEFAULT_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -356,5 +480,12 @@ export const api = {
   holdings: () => request<{ fx_rate: number | null; holdings: HoldingRow[]; totals: Record<string, number> }>("/api/holdings"),
   addHolding: (h: HoldingInput) => request<{ id: number }>("/api/holdings", jsonBody("POST", h)),
   deleteHolding: (id: number) => request<null>(`/api/holdings/${id}`, { method: "DELETE" }),
+  universe: () => request<{ symbol: string; name: string | null; sector: string | null }[]>("/api/universe"),
+  socialMap: () => request<SocialMap>("/api/social/map"),
+  socialStatus: () => request<SocialStatus>("/api/social/status"),
+  socialRun: () => request<{ accepted: boolean }>("/api/social/run", { method: "POST" }),
+  newsSweep: () => request<{ accepted: boolean }>("/api/news/sweep", { method: "POST" }),
+  strategy: (p: StrategyParams) =>
+    request<StrategyResponse>(`/api/strategy?${new URLSearchParams(Object.entries(p).map(([k, v]) => [k, String(v)]))}`),
   backfill: (days: number) => request<{ accepted: boolean }>(`/api/runs/backfill?days=${days}`, { method: "POST" }),
 };

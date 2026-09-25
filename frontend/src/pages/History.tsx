@@ -40,7 +40,18 @@ export function History() {
                   <RegimeBadge regime={r.regime} />
                 </td>
                 <td className="num">{r.buy_count}</td>
-                <td className="small">{r.top_picks.join(", ") || <span className="muted">stay in cash</span>}</td>
+                <td className="small">
+                  {r.top_picks.length ? (
+                    r.top_picks.map((t, i) => (
+                      <span key={t} title={r.top_pick_names?.[t] ?? ""}>
+                        {i > 0 && " · "}
+                        <strong>{t}</strong> <span className="muted">{r.top_pick_names?.[t] ?? ""}</span>
+                      </span>
+                    ))
+                  ) : (
+                    <span className="muted">stay in cash</span>
+                  )}
+                </td>
                 <td className="hide-sm muted small">{r.source}</td>
               </tr>
             ))}

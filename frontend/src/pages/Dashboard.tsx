@@ -4,6 +4,7 @@ import { RecTable } from "../components/RecTable";
 import { Delta, ErrorBox, Loading, RegimeBadge, StatTile } from "../components/ui";
 import { isMarketOpen, longDate, num, pct, usd } from "../format";
 import { useAsync } from "../hooks";
+import { Formula, HowCalculated } from "../components/how";
 
 export function RegimePanel({ run }: { run: Run }) {
   const m = run.regime.metrics;
@@ -140,6 +141,20 @@ export function RunView({ run, quotes }: { run: Run; quotes?: Record<string, Quo
           scaled by the market regime). <strong>Stop-loss</strong> = 2× average true range below the close.
         </p>
         <RecTable recs={shown} quotes={quotes} />
+        <HowCalculated>
+          <ul className="small how-list">
+            <li>
+              <Formula>score = 0.25·trend + 0.25·momentum + 0.15·relative strength + 0.10·timing + 0.15·risk + 0.10·fundamentals</Formula> — each component 0–100;
+              momentum, relative strength and risk are percentile ranks against the other stocks today.
+            </li>
+            <li>Ratings: Strong Buy ≥ 78 · Buy ≥ 65 · Hold ≥ 45 · Avoid. A confirmed downtrend caps at Hold; Risk-Off downgrades Strong Buy.</li>
+            <li>
+              <Formula>weight_i = (1/volatility_i) / Σ(1/volatility) × regime exposure</Formula> for the top {10} buy-rated names ·{" "}
+              <Formula>stop-loss = close − 2 × ATR14</Formula>.
+            </li>
+            <li>Size buckets from market cap: Mega ≥ $200B, Large ≥ $10B, Mid ≥ $2B, Small ≥ $300M.</li>
+          </ul>
+        </HowCalculated>
         {Object.keys(run.skipped).length > 0 && (
           <details className="small muted skipped">
             <summary>{Object.keys(run.skipped).length} symbols skipped</summary>

@@ -21,3 +21,10 @@ def health() -> dict[str, Any]:
         resp = c.get("/health")
         resp.raise_for_status()
         return resp.json()
+
+
+def collect(payload: dict[str, Any]) -> dict[str, Any]:
+    with httpx.Client(base_url=get_settings().agent_url, timeout=httpx.Timeout(1800, connect=10)) as c:
+        resp = c.post("/collect", json=payload)
+        resp.raise_for_status()
+        return resp.json()

@@ -244,8 +244,39 @@ def morning_brief(source: str = "scheduled") -> None:
             _set(message="agent is reading the news and writing the brief (several minutes with a local LLM)")
             b = brief.build_and_store(session, run)
             log.info("stored brief for %s with %d picks", b.brief_date, len(b.content.get("picks", [])))
+            if get_settings().news_sweep:
+                _sweep(session)
 
     _job(f"morning brief ({source})", work)
+
+
+def _sweep(session: Session) -> None:
+    """Collect news for every tracked stock (no LLM), store it, then ask the clustering service to update."""
+    from . import agent_client, clustering_client
+    from .brief import store_articles
+    from .config import SECTOR_ETFS
+
+    names = {t.symbol: t.name for t in session.scalars(select(Ticker))}
+    fx = get_settings().fx_symbol
+    symbols = [{"symbol": s, "name": names.get(s)} for s in tracked_symbols(session) if not s.startswith("^") and s != fx]
+    _set(message=f"news sweep: collecting articles for {len(symbols)} symbols")
+    result = agent_client.collect({"as_of": date.today().isoformat(), "symbols": symbols, "sectors": SECTOR_ETFS})
+    store_articles(session, {"articles": result["articles"]}, date.today())
+    session.commit()
+    log.info("news sweep stored up to %d articles", len(result["articles"]))
+    try:
+        clustering_client.post("/run")
+        _set(message="news sweep done; clustering service is updating")
+    except Exception:  # noqa: BLE001 - clustering is optional; the brief is already saved
+        log.warning("clustering service unavailable", exc_info=True)
+
+
+def news_sweep() -> None:
+    def work() -> None:
+        with session_scope() as session:
+            _sweep(session)
+
+    _job("news sweep", work)
 
 
 def backfill(days: int, refresh: bool = True) -> None:

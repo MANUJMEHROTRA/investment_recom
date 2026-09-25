@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from . import agent_client, analytics_client, brief as brief_mod, market_data, pipeline
+from . import agent_client, analytics_client, brief as brief_mod, clustering_client, market_data, pipeline
 from .config import get_settings
 from .db import get_session, init_db
 from .models import DailyBrief, DailyPrice, Holding, NewsArticle, Recommendation, RecommendationRun, Ticker
@@ -108,9 +108,11 @@ def health(session: Session = Depends(get_session)) -> dict[str, Any]:
 @app.get("/api/universe")
 def universe(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     tickers = ticker_map(session)
+    symbols = dict.fromkeys([*settings.universe_list, *pipeline.holding_symbols(session), settings.benchmark])
     return [
-        {"symbol": s, "name": tickers[s].name if s in tickers else None, "sector": tickers[s].sector if s in tickers else None}
-        for s in settings.universe_list
+        {"symbol": s, "name": tickers[s].name if s in tickers else ("SPDR S&P 500 ETF" if s == settings.benchmark else None),
+         "sector": tickers[s].sector if s in tickers else None}
+        for s in symbols
     ]
 
 
@@ -119,11 +121,13 @@ def universe(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
 @app.get("/api/runs")
 def list_runs(limit: int = Query(365, le=2000), session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     runs = session.scalars(select(RecommendationRun).order_by(RecommendationRun.run_date.desc()).limit(limit))
+    names = ticker_map(session)
     out = []
     for run in runs:
         top = [r for r in run.recommendations if r.target_weight][:5]
         d = run_dict(run, session, include_recs=False)
         d["top_picks"] = [r.symbol for r in top]
+        d["top_pick_names"] = {r.symbol: names[r.symbol].name for r in top if r.symbol in names}
         d["buy_count"] = sum(r.rating in ("Strong Buy", "Buy") for r in run.recommendations)
         out.append(d)
     return out
@@ -249,6 +253,9 @@ def performance(days: int = Query(90, ge=5, le=1000), session: Session = Depends
         }
     )
     top = {(d.isoformat(), s) for d, s, r, _, k in recs if k <= settings.top_n and r in ("Strong Buy", "Buy")}
+    names = ticker_map(session)
+    for row in result["rows"]:
+        row["name"] = names[row["symbol"]].name if row["symbol"] in names else None
     result["rows"] = sorted(
         (row for row in result["rows"] if (row["run_date"], row["symbol"]) in top),
         key=lambda row: (row["run_date"], -row["score"]),
@@ -372,3 +379,108 @@ def delete_holding(holding_id: int, session: Session = Depends(get_session)) -> 
     if h is None:
         raise HTTPException(404, "Holding not found")
     session.delete(h)
+
+
+# ---------------------------------------------------------------- news feed & social listening
+
+@app.get("/api/news/feed")
+def news_feed(after_pk: int = 0, limit: int = Query(2000, le=5000), session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Incremental feed of stored articles for the clustering service (cursor = pk)."""
+    names = ticker_map(session)
+    rows = session.scalars(select(NewsArticle).where(NewsArticle.pk > after_pk).order_by(NewsArticle.pk).limit(limit)).all()
+    items = []
+    for a in rows:
+        t = names.get(a.topic)
+        items.append(
+            {
+                "pk": a.pk, "id": a.id, "topic": a.topic, "source_api": a.source_api, "publisher": a.publisher,
+                "title": a.title, "summary": a.summary, "url": a.url, "kind": a.kind,
+                "published_at": a.published_at.isoformat(), "sentiment": a.sentiment, "sentiment_method": a.sentiment_method,
+                "symbol_name": t.name if t else None,
+                "sector": (t.sector if t else None) or (a.topic.split(":", 1)[1] if a.topic.startswith("sector:") else None),
+            }
+        )
+    return {"items": items, "next_after_pk": rows[-1].pk if rows else after_pk}
+
+
+def _social(fn, *args):
+    try:
+        return fn(*args)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Clustering service unavailable: {exc}") from exc
+
+
+@app.get("/api/social/map")
+def social_map() -> Any:
+    return _social(clustering_client.get, "/map")
+
+
+@app.get("/api/social/status")
+def social_status() -> Any:
+    return _social(clustering_client.get, "/status")
+
+
+@app.post("/api/social/run", status_code=202)
+def social_run() -> Any:
+    return _social(clustering_client.post, "/run")
+
+
+@app.post("/api/news/sweep", status_code=202)
+def trigger_sweep(background: BackgroundTasks) -> dict[str, Any]:
+    if pipeline.status["running"]:
+        raise HTTPException(409, "A job is already running")
+    background.add_task(pipeline.news_sweep)
+    return {"accepted": True}
+
+
+# ---------------------------------------------------------------- strategy backtest
+
+@app.get("/api/strategy")
+def strategy(
+    sizes: str = "5,10,20,30",
+    rebalance_every: int = Query(5, ge=1, le=60),
+    selection: str = Query("ranked", pattern="^(ranked|buyable)$"),
+    fx_markup_pct: float = Query(1.0, ge=0, le=10),
+    trade_cost_pct: float = Query(0.0, ge=0, le=5),
+    fx_mode: str = Query("actual", pattern="^(actual|assumed)$"),
+    assumed_fx_annual_pct: float = Query(1.0, ge=-20, le=20),
+    days: int = Query(365, ge=10, le=2000),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Replays every stored recommendation day: buy the top-N at the next open, equal weight."""
+    n = sorted({int(x) for x in sizes.split(",") if x.strip().isdigit() and 0 < int(x) <= 100}) or [10]
+    since = date.today() - timedelta(days=days)
+    runs = session.scalars(select(RecommendationRun).where(RecommendationRun.run_date >= since).order_by(RecommendationRun.run_date)).all()
+    if not runs:
+        raise HTTPException(404, "No stored recommendations in this window yet.")
+    top = max(n)
+    picks, symbols = [], {settings.benchmark}
+    for run in runs:
+        ranked = [r.symbol for r in run.recommendations]
+        buyable = [r.symbol for r in run.recommendations if r.rating in ("Strong Buy", "Buy")]
+        symbols.update(ranked[: top + 1])
+        symbols.update(buyable[: top + 1])
+        picks.append({"run_date": run.run_date.isoformat(), "source": run.source, "ranked": ranked[: top + 1], "buyable": buyable[: top + 1]})
+    rows = session.execute(
+        select(DailyPrice.symbol, DailyPrice.date, DailyPrice.open, DailyPrice.close)
+        .where(DailyPrice.symbol.in_(symbols | {settings.fx_symbol}), DailyPrice.date >= runs[0].run_date)
+        .order_by(DailyPrice.symbol, DailyPrice.date)
+    ).all()
+    prices: dict[str, dict[str, list]] = {}
+    for sym, d, o, c in rows:
+        p = prices.setdefault(sym, {"dates": [], "open": [], "close": []})
+        p["dates"].append(d.isoformat())
+        p["open"].append(o)
+        p["close"].append(c)
+    fx = prices.pop(settings.fx_symbol, None)
+    result = analytics_client.strategy(
+        {
+            "runs": picks, "prices": prices, "fx": fx, "benchmark": settings.benchmark, "sizes": n,
+            "rebalance_every": rebalance_every, "selection": selection, "fx_markup_pct": fx_markup_pct,
+            "trade_cost_pct": trade_cost_pct, "fx_mode": fx_mode, "assumed_fx_annual_pct": assumed_fx_annual_pct,
+        }
+    )
+    result["names"] = {s: t.name for s, t in ticker_map(session).items() if s in symbols}
+    result["recommendation_days"] = len(runs)
+    result["backfilled_days"] = sum(r.source == "backfill" for r in runs)
+    return result
